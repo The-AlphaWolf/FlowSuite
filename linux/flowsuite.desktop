@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=FlowSuite
+Comment=Private local voice dictation and voice coding
+Exec=__PYTHON3__ __APPDIR__/flowsuite.py
+WorkingDirectory=__APPDIR__
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

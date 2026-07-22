@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=WhisperFlow
-Comment=Private local voice dictation
-Exec=__PYTHON3__ __APPDIR__/whisperflow.py
-WorkingDirectory=__APPDIR__
-X-GNOME-Autostart-enabled=true
-NoDisplay=true

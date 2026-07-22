@@ -14,6 +14,7 @@ Release to insert. Nothing ever leaves this machine.
 import glob
 import json
 import os
+import platform
 import site
 import sys
 import threading
@@ -22,15 +23,40 @@ from pathlib import Path
 
 
 def _enable_cuda_dlls() -> None:
-    """faster-whisper/ctranslate2 loads cublas/cudnn by *bare name*, which
-    Windows resolves via PATH only (os.add_dll_directory does not cover it).
-    The `nvidia-*-cu12` pip wheels drop the DLLs under site-packages/nvidia/*/bin,
-    so prepend those to PATH before the model is ever loaded. No-op if absent."""
+    """Windows only: faster-whisper/ctranslate2 loads cublas/cudnn by *bare
+    name*, which Windows resolves via PATH only (os.add_dll_directory does not
+    cover it). The `nvidia-*-cu12` pip wheels drop the DLLs under
+    site-packages/nvidia/*/bin, so prepend those to PATH before the model is
+    ever loaded. No-op if absent, and a no-op on macOS/Linux (there the loader
+    uses RPATH / LD_LIBRARY_PATH instead)."""
+    if platform.system() != "Windows":
+        return
     dirs = []
     for root in site.getsitepackages() + [site.getusersitepackages()]:
         dirs += glob.glob(os.path.join(root, "nvidia", "*", "bin"))
     if dirs:
         os.environ["PATH"] = os.pathsep.join(dirs) + os.pathsep + os.environ["PATH"]
+
+
+def _resolve_device(cfg: dict) -> tuple[str, str]:
+    """Turn a possibly-"auto" device/compute_type into concrete values.
+
+    "auto" (the shipped default) uses the GPU only if one is actually visible,
+    otherwise CPU — so the same config works on an RTX laptop, a CPU-only PC,
+    or an Apple-Silicon Mac with no code changes."""
+    device = cfg.get("device", "auto")
+    compute = cfg.get("compute_type", "auto")
+    if device == "auto":
+        device = "cpu"
+        try:
+            import ctranslate2
+            if ctranslate2.get_cuda_device_count() > 0:
+                device = "cuda"
+        except Exception:
+            pass
+    if compute == "auto":
+        compute = "float16" if device == "cuda" else "int8"
+    return device, compute
 
 
 _enable_cuda_dlls()
@@ -61,8 +87,10 @@ _CODE_PROMPT = (
 
 DEFAULT_CONFIG = {
     "model_size": "small",
-    "device": "cuda",            # RTX 3050; auto-falls back to cpu/int8
-    "compute_type": "float16",
+    # "auto" picks CUDA if a GPU is present, else CPU. Override with an explicit
+    # "cuda"/"cpu" (and compute_type "float16"/"int8") if you want to force one.
+    "device": "auto",
+    "compute_type": "auto",
     "language": "en",
     "beep": True,
     "min_record_seconds": 0.3,
@@ -100,15 +128,16 @@ class FlowSuite:
         self.active_mode: str | None = None
         self._kbd = KeyController()
 
+        device, compute = _resolve_device(cfg)
         print(f"[model] loading faster-whisper '{cfg['model_size']}' on "
-              f"{cfg['device']} ({cfg['compute_type']}) ...")
+              f"{device} ({compute}) ...")
         from faster_whisper import WhisperModel
         t0 = time.time()
         try:
-            self.model = WhisperModel(cfg["model_size"], device=cfg["device"],
-                                      compute_type=cfg["compute_type"])
+            self.model = WhisperModel(cfg["model_size"], device=device,
+                                      compute_type=compute)
         except (RuntimeError, ValueError) as e:
-            print(f"[model] {cfg['device']} unavailable ({e}); using cpu/int8")
+            print(f"[model] {device} unavailable ({e}); using cpu/int8")
             self.model = WhisperModel(cfg["model_size"], device="cpu",
                                       compute_type="int8")
         print(f"[model] ready in {time.time() - t0:.1f}s")

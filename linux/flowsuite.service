@@ -1,11 +1,11 @@
 [Unit]
-Description=WhisperFlow local dictation
+Description=FlowSuite local voice engine
 After=graphical-session.target
 
 [Service]
 Type=simple
 WorkingDirectory=__APPDIR__
-ExecStart=__PYTHON3__ __APPDIR__/whisperflow.py
+ExecStart=__PYTHON3__ __APPDIR__/flowsuite.py
 Restart=on-failure
 
 [Install]

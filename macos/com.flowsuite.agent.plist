@@ -4,11 +4,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.whisperflow.agent</string>
+    <string>com.flowsuite.agent</string>
     <key>ProgramArguments</key>
     <array>
         <string>__PYTHON3__</string>
-        <string>__APPDIR__/whisperflow.py</string>
+        <string>__APPDIR__/flowsuite.py</string>
     </array>
     <key>WorkingDirectory</key>
     <string>__APPDIR__</string>
@@ -17,8 +17,8 @@
     <key>KeepAlive</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>__APPDIR__/whisperflow.log</string>
+    <string>__APPDIR__/flowsuite.log</string>
     <key>StandardErrorPath</key>
-    <string>__APPDIR__/whisperflow.err.log</string>
+    <string>__APPDIR__/flowsuite.err.log</string>
 </dict>
 </plist>
