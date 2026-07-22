@@ -1,4 +1,4 @@
-"""WhisperFlow — private, fully local voice dictation for Windows.
+"""WhisperFlow — private, fully local voice dictation for Windows, macOS, and Linux.
 
 Hold the hotkey (default: F9), speak, release. Your words are transcribed
 on-device with faster-whisper and pasted at the cursor in whatever app is
@@ -6,6 +6,7 @@ focused. No audio, text, or telemetry ever leaves this machine.
 """
 
 import json
+import platform
 import queue
 import re
 import sys
@@ -15,11 +16,16 @@ from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
+from pynput import keyboard as pynput_keyboard
+from pynput.keyboard import Controller as KeyController, Key, KeyCode
 
 try:
     import winsound
 except ImportError:
     winsound = None
+
+IS_MAC = platform.system() == "Darwin"
+IS_LINUX = platform.system() == "Linux"
 
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = APP_DIR / "config.json"
@@ -57,10 +63,39 @@ def load_config() -> dict:
 
 
 def beep(cfg: dict, freq: int) -> None:
-    if cfg["beep"] and winsound is not None:
+    if not cfg["beep"]:
+        return
+    if winsound is not None:
         threading.Thread(
             target=winsound.Beep, args=(freq, 120), daemon=True
         ).start()
+    else:
+        # macOS/Linux: no stdlib tone generator, fall back to the terminal bell
+        print("\a", end="", flush=True)
+
+
+# key name (as typed in config.json) -> pynput key object
+_NAMED_KEYS = {
+    "ctrl": Key.ctrl, "left ctrl": Key.ctrl_l, "right ctrl": Key.ctrl_r,
+    "alt": Key.alt, "left alt": Key.alt_l, "right alt": Key.alt_r,
+    "shift": Key.shift, "left shift": Key.shift_l, "right shift": Key.shift_r,
+    "cmd": Key.cmd, "command": Key.cmd, "win": Key.cmd, "windows": Key.cmd,
+    "space": Key.space, "tab": Key.tab, "esc": Key.esc, "escape": Key.esc,
+    "capslock": Key.caps_lock, "caps lock": Key.caps_lock,
+}
+for _i in range(1, 21):
+    _NAMED_KEYS[f"f{_i}"] = getattr(Key, f"f{_i}", None)
+_NAMED_KEYS = {k: v for k, v in _NAMED_KEYS.items() if v is not None}
+
+
+def parse_hotkey(name: str):
+    """Map a config.json hotkey string (e.g. 'f9', 'right ctrl') to a pynput key."""
+    key = _NAMED_KEYS.get(name.strip().lower())
+    if key is not None:
+        return key
+    if len(name) == 1:
+        return KeyCode.from_char(name)
+    raise ValueError(f"Unrecognized hotkey '{name}' — see README for valid names")
 
 
 def clean_text(text: str, cfg: dict) -> str:
@@ -184,9 +219,9 @@ class WhisperFlow:
                 self.busy = False
 
     def _inject(self, text: str):
-        import keyboard
+        controller = KeyController()
         if self.cfg["inject_method"] == "type":
-            keyboard.write(text, delay=0.005)
+            controller.type(text)
             return
         import pyperclip
         try:
@@ -195,7 +230,9 @@ class WhisperFlow:
             old_clip = None
         pyperclip.copy(text)
         time.sleep(0.05)
-        keyboard.send("ctrl+v")
+        paste_mod = Key.cmd if IS_MAC else Key.ctrl
+        with controller.pressed(paste_mod):
+            controller.tap("v")
         if old_clip is not None:
             # give the paste time to land before restoring the clipboard
             threading.Timer(0.5, pyperclip.copy, args=(old_clip,)).start()
@@ -240,20 +277,46 @@ def main():
     cfg = load_config()
     app = WhisperFlow(cfg)
 
-    import keyboard
-    key = cfg["hotkey"]
-    if cfg["mode"] == "toggle":
-        def on_toggle():
+    if IS_LINUX:
+        print("[note] Linux: global hotkeys need an X11 session (Wayland is "
+              "not supported by the input backend) and, on some distros, "
+              "membership in the 'input' group. See README.")
+
+    target_key = parse_hotkey(cfg["hotkey"])
+    pressed = False
+
+    def matches(key):
+        return key == target_key
+
+    def on_press(key):
+        nonlocal pressed
+        if not matches(key):
+            return
+        if cfg["mode"] == "toggle":
             if app.busy and app.recorder._recording:
                 app.stop_recording()
             else:
                 app.start_recording()
-        keyboard.add_hotkey(key, on_toggle, suppress=True)
-        print(f"[ready] press {key.upper()} to start/stop dictation")
+        elif not pressed:
+            pressed = True
+            app.start_recording()
+
+    def on_release(key):
+        nonlocal pressed
+        if not matches(key):
+            return
+        if cfg["mode"] != "toggle" and pressed:
+            pressed = False
+            app.stop_recording()
+
+    listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
+    listener.start()
+
+    key_label = cfg["hotkey"].upper()
+    if cfg["mode"] == "toggle":
+        print(f"[ready] press {key_label} to start/stop dictation")
     else:
-        keyboard.on_press_key(key, lambda e: app.start_recording(), suppress=True)
-        keyboard.on_release_key(key, lambda e: app.stop_recording(), suppress=True)
-        print(f"[ready] hold {key.upper()} to dictate, release to insert text")
+        print(f"[ready] hold {key_label} to dictate, release to insert text")
     print("[ready] 100% local - nothing leaves this machine. Ctrl+C to quit.")
 
     tray = make_tray(app)
@@ -261,10 +324,11 @@ def main():
         if tray is not None:
             tray.run()   # blocks until Quit
         else:
-            keyboard.wait()
+            listener.join()
     except KeyboardInterrupt:
         pass
     finally:
+        listener.stop()
         app.recorder.stream.stop()
         app.recorder.stream.close()
     print("bye")

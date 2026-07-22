@@ -1,0 +1,12 @@
+[Unit]
+Description=WhisperFlow local dictation
+After=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=__APPDIR__
+ExecStart=__PYTHON3__ __APPDIR__/whisperflow.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
