@@ -162,6 +162,8 @@ def _tidy(code: str) -> str:
                   r" \1 ", code)
     # comma always "x, y"
     code = re.sub(r"\s*,\s*", ", ", code)
+    # tighten a unary "!" onto its operand (C++): "! stack" -> "!stack"
+    code = re.sub(r"!\s+(\w)", r"!\1", code)
     code = re.sub(r"\s{2,}", " ", code)
     return code.strip()
 
@@ -203,6 +205,18 @@ def _transpile_line(line: str, aliases: dict[str, str]) -> str:
                 r"endswith|most_common")
     line = re.sub(rf"\.\s*({_METHODS})\s+(.+)$", r".\1(\2)", line)
     line = re.sub(rf"\.\s*({_METHODS})\s*$", r".\1()", line)
+    # "range A to B" -> range(A, B):  "range 1 to n", "range i + 1 to n"
+    line = re.sub(r"\brange (.+?) to (.+)$", r"range \1 , \2", line)
+    # "X of Y" -> X[Y] indexing (simple index; chains: "grid of i of j" -> grid[i][j]).
+    # "X of minus 1" -> X[-1].  For a COMPUTED index (i-1) speak brackets instead.
+    for _ in range(4):
+        nxt = re.sub(r"([a-z_]\w*|\]|\)) of -\s*(\w+)", r"\1[-\2]", line)
+        nxt = re.sub(r"([a-z_]\w*|\]|\)) of (\w+)", r"\1[\2]", nxt)
+        if nxt == line:
+            break
+        line = nxt
+    # a redundant spoken trailing "colon" — control templates add their own
+    line = re.sub(r"\s*:\s*$", "", line)
     # define function two sum with nums comma target -> def two_sum(nums, target):
     m = re.match(r"^def(?:ine)? (?:function |method )?(.+?)(?: with (.+))?$", line)
     if m:

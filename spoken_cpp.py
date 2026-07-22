@@ -114,9 +114,13 @@ def _cpp_line(line: str, aliases: dict[str, str]) -> str:
     # builtins "F of ..." -> F(...)  (multi-arg, to end of line)
     line = re.sub(r"\b(min|max|abs|sqrt|pow|gcd|lcm|swap|sort|count|find|"
                   r"to_string|stoi|size|make_pair)\s+of\s+(.+)$", r"\1(\2)", line)
-    # sentinel constants
-    line = re.sub(r"\bnegative infinity\b|\bint min\b", "INT_MIN", line)
-    line = re.sub(r"\b(?:positive )?infinity\b|\bint max\b", "INT_MAX", line)
+    # sentinel constants. "infinity" is unambiguous; "int max"/"int min" only in
+    # VALUE position (after = return ( , < > ? :) so a declaration of a variable
+    # named max/min isn't clobbered.
+    line = re.sub(r"\bnegative infinity\b", "INT_MIN", line)
+    line = re.sub(r"\b(?:positive )?infinity\b", "INT_MAX", line)
+    line = re.sub(r"(=|return|\(|,|<|>|\?|:)\s*int max\b", r"\1 INT_MAX", line)
+    line = re.sub(r"(=|return|\(|,|<|>|\?|:)\s*int min\b", r"\1 INT_MIN", line)
     line = re.sub(r"\blong long max\b", "LLONG_MAX", line)
     line = re.sub(r"\blong long min\b", "LLONG_MIN", line)
     # method calls:  "v . push_back x" -> "v.push_back(x)"
@@ -127,11 +131,19 @@ def _cpp_line(line: str, aliases: dict[str, str]) -> str:
     # no-arg methods (NOT first/second — those are attributes)
     line = re.sub(r"\.\s*(size|empty|clear|begin|end|rbegin|rend|top|front|"
                   r"back|pop|pop_back|pop_front)\s*$", r".\1()", line)
+    # "X of Y" -> X[Y] indexing (chains "grid of i of j" -> grid[i][j]).
+    # For a computed index (i-1) speak brackets instead.
+    for _ in range(4):
+        nxt = re.sub(r"([a-z_]\w*|\]|\)) of -\s*(\w+)", r"\1[-\2]", line)
+        nxt = re.sub(r"([a-z_]\w*|\]|\)) of (\w+)", r"\1[\2]", nxt)
+        if nxt == line:
+            break
+        line = nxt
 
     # range-for:  "for each x in nums" / "for auto x in nums" -> for (auto& x : nums) {
     m = re.match(r"^for (?:each|auto|every) (\w+) (?:in|of) (.+)$", line)
     if m:
-        return _tidy(f"for (auto& {m.group(1)} : {m.group(2)}) {{")
+        return f"for (auto& {m.group(1)} : {_tidy(m.group(2))}) {{"
     # counted loop:  for i from 0 to n [step 2]  ->  for (int i = 0; i < n; i++) {
     m = re.match(r"^for (\w+) from (.+?) to (.+?)(?: step (.+))?$", line)
     if m:
