@@ -22,8 +22,12 @@ otherwise runs on the CPU — **no GPU is required.**
 git clone https://github.com/The-AlphaWolf/FlowSuite.git
 cd FlowSuite
 pip install -r requirements.txt
+python doctor.py           # verify mic, clipboard, hotkeys, GPU/CPU (recommended)
 python flowsuite.py        # Windows;  use  python3 flowsuite.py  on macOS/Linux
 ```
+
+> Run **`python doctor.py`** any time you hit trouble — it checks every
+> dependency and permission and tells you exactly what to fix, per platform.
 
 On first run it downloads the speech model (~460 MB for `small`) once, prints
 `[ready]`, then listens. Hold **F8** in a code editor and say
@@ -233,6 +237,10 @@ Created on first run; per-machine, not tracked by git.
 
 ## Troubleshooting
 
+**First, run `python doctor.py`** — it verifies Python, packages, microphone,
+clipboard, hotkey backend, and compute device, and prints a fix hint for each
+failure. Common issues:
+
 - **Nothing is inserted, no beep** — the hotkey isn't reaching the app. On macOS
   grant Accessibility permission; on Linux use an X11 session / join the `input`
   group; on Windows run the terminal as Administrator.
@@ -262,6 +270,7 @@ Created on first run; per-machine, not tracked by git.
 - `flowsuite.py` — the app (hotkeys, model, text injection)
 - `spoken_python.py` / `spoken_cpp.py` — transpilers (`transpile(text, cfg) → ops`)
 - `whisperflow.py` — shared mic capture + prose `clean_text`
+- `doctor.py` — environment self-check (`python doctor.py`)
 - `run_flowsuite.bat` (Windows) / `run_flowsuite.sh` (macOS/Linux) — launchers
 - `start_flowsuite.vbs`, `macos/`, `linux/` — autostart helpers per OS
 

@@ -291,4 +291,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if any(a in ("--doctor", "-d", "doctor") for a in sys.argv[1:]):
+        import doctor
+        sys.exit(doctor.run())
     sys.exit(main())
